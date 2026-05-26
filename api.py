@@ -169,7 +169,6 @@ ABSOLUTE RULES FOR LEGAL QUERIES:
 # -------------------- MEMORY --------------------
 conversations = {}
 
-from flask import Flask, request, jsonify, Response, send_file
 
 # -------------------- ROOT --------------------
 @app.route("/")

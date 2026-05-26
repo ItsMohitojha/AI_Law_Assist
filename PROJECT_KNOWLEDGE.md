@@ -235,14 +235,13 @@ huggingface-hub>=0.16.0
 - API health check polled on page load
 
 ### Important Quirks
-1. **Duplicate import:** `api.py` line 106 re-imports Flask — harmless but redundant
-2. **UTF-8 force:** `api.py` wraps stdout/stderr for Windows console compatibility
-3. **No persistent storage:** Conversations are in-memory dict, lost on server restart
-4. **Hybrid RAG parameters:** API fetches dense/sparse `k=15`, then reranks to select top 3 chunks to feed into context.
-5. **Context building:** Full document page_content is used without character truncation, cleaned only via regex.
-6. **1200-char answer cap:** Non-streaming endpoint truncates answers at 1200 chars
-7. **CinematicTransition.jsx exists but is NOT used** — index.html has its own vanilla JS version
-8. **`allow_dangerous_deserialization=True`** — Required for FAISS pickle loading, acceptable for local use
+1. **UTF-8 force:** `api.py` wraps stdout/stderr for Windows console compatibility
+2. **No persistent storage:** Conversations are in-memory dict, lost on server restart
+3. **Hybrid RAG parameters:** API fetches dense/sparse $K=15$ candidates, then reranks to select the top $k=3$ chunks.
+4. **Context building:** Full document page_content is used without character truncation, cleaned only via regex (preserving Section titles/headers).
+5. **1200-char answer cap:** Non-streaming endpoint truncates answers at 1200 chars
+6. **CinematicTransition.jsx exists but is NOT used** — index.html has its own vanilla JS version
+7. **`allow_dangerous_deserialization=True`** — Required for FAISS pickle loading, acceptable for local use
 
 ---
 
@@ -250,7 +249,7 @@ huggingface-hub>=0.16.0
 
 ### ✅ Working
 - Flask API server starts and serves UI at `http://localhost:5000`
-- FAISS index built from 5 legal PDFs (Constitution, IPC, BNS, Motor Vehicle Act, UGC Regs)
+- FAISS index built from 14 acts (12,824 semantic chunks) instead of raw PDFs
 - Chat UI with cinematic hero → search dock → chat transition
 - SSE streaming responses work
 - Dark/light mode toggle
