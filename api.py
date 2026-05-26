@@ -2,17 +2,77 @@ import os
 import re
 import sys
 import io
+import math
 from dotenv import load_dotenv
 
 # Force UTF-8 output so Windows console encoding never crashes the server
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 from google import genai
+from google.genai import types
 from flask import Flask, request, jsonify, Response, send_file
 from flask_cors import CORS
 
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
+from sentence_transformers import CrossEncoder
+
+class BM25Retriever:
+    def __init__(self, documents, k1=1.5, b=0.75):
+        self.documents = list(documents)
+        self.k1 = k1
+        self.b = b
+        self.corpus_size = len(self.documents)
+
+        # Tokenize documents
+        self.doc_tokenized = []
+        self.doc_lens = []
+        for doc in self.documents:
+            tokens = self._tokenize(doc.page_content)
+            self.doc_tokenized.append(tokens)
+            self.doc_lens.append(len(tokens))
+
+        self.avgdl = sum(self.doc_lens) / max(1, self.corpus_size)
+
+        # Compute Document Frequency (DF) for each term
+        self.df = {}
+        for tokens in self.doc_tokenized:
+            unique_tokens = set(tokens)
+            for token in unique_tokens:
+                self.df[token] = self.df.get(token, 0) + 1
+
+        # Compute Inverse Document Frequency (IDF) for each term
+        self.idf = {}
+        for term, df_val in self.df.items():
+            self.idf[term] = math.log((self.corpus_size - df_val + 0.5) / (df_val + 0.5) + 1.0)
+
+    def _tokenize(self, text):
+        return re.findall(r"\w+", text.lower())
+
+    def retrieve(self, query, k=15):
+        query_tokens = self._tokenize(query)
+        if not query_tokens:
+            return self.documents[:k]
+
+        scores = []
+        for idx, doc_tokens in enumerate(self.doc_tokenized):
+            score = 0.0
+            doc_len = self.doc_lens[idx]
+
+            tf = {}
+            for token in doc_tokens:
+                tf[token] = tf.get(token, 0) + 1
+
+            for token in query_tokens:
+                if token in tf:
+                    tf_val = tf[token]
+                    idf_val = self.idf.get(token, 0.0)
+                    denominator = tf_val + self.k1 * (1.0 - self.b + self.b * doc_len / self.avgdl)
+                    score += idf_val * (tf_val * (self.k1 + 1.0)) / denominator
+            scores.append((score, idx))
+
+        scores.sort(key=lambda x: x[0], reverse=True)
+        return [self.documents[idx] for score, idx in scores[:k]]
 
 # -------------------- INIT --------------------
 app = Flask(__name__, static_folder='static', static_url_path='/static')
@@ -37,8 +97,15 @@ vectorstore = FAISS.load_local(
     allow_dangerous_deserialization=True
 )
 
+# Extract document nodes for BM25
+docs = list(vectorstore.docstore._dict.values())
+bm25_retriever = BM25Retriever(docs)
+
+# Initialize reranker
+reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+
 # 🔥 IMPORTANT FIX (less context = better answers)
-retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+retriever = vectorstore.as_retriever(search_kwargs={"k": 15})
 
 # -------------------- CLEAN CONTEXT --------------------
 def clean_context(text):
@@ -46,7 +113,6 @@ def clean_context(text):
     text = re.sub(r'\*{2,}', '', text)
     text = re.sub(r'\n+', '\n', text)
     text = re.sub(r'Page \d+', '', text)
-    text = re.sub(r'Section \d+.*', '', text)
     return text.strip()
 
 # -------------------- SYSTEM PROMPT --------------------
@@ -133,15 +199,35 @@ def chat():
             conversations[session_id] = []
 
         # 🔥 RETRIEVE
-        docs = retriever.invoke(question)
+        dense_candidates = retriever.invoke(question)
+        sparse_candidates = bm25_retriever.retrieve(question, k=15)
 
-        context = "\n".join([doc.page_content[:500] for doc in docs])
+        # Deduplicate
+        unique_candidates = []
+        seen = set()
+
+        for doc in dense_candidates + sparse_candidates:
+            chunk_id = doc.metadata.get("chunk_id")
+            if chunk_id:
+                if chunk_id not in seen:
+                    seen.add(chunk_id)
+                    unique_candidates.append(doc)
+            else:
+                if doc.page_content not in seen:
+                    seen.add(doc.page_content)
+                    unique_candidates.append(doc)
+
+        # 🔥 RERANK
+        pairs = [[question, doc.page_content] for doc in unique_candidates]
+        scores = reranker.predict(pairs)
+        ranked_candidates = sorted(zip(scores, unique_candidates), key=lambda x: x[0], reverse=True)
+        top_docs = [doc for score, doc in ranked_candidates[:3]]
+
+        context = "\n".join([doc.page_content for doc in top_docs])
         context = clean_context(context)
 
         # 🔥 PROMPT
-        final_prompt = f"""{SYSTEM_PROMPT}
-
-Question:
+        user_prompt = f"""Question:
 {question}
 
 Context:
@@ -152,7 +238,11 @@ Answer:
 
         response = client.models.generate_content(
             model="gemini-2.5-flash-lite",
-            contents=final_prompt
+            contents=user_prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_PROMPT,
+                temperature=0.2
+            )
         )
 
         answer = response.text.strip()
@@ -185,14 +275,34 @@ def chat_stream():
         if session_id not in conversations:
             conversations[session_id] = []
 
-        docs = retriever.invoke(question)
+        dense_candidates = retriever.invoke(question)
+        sparse_candidates = bm25_retriever.retrieve(question, k=15)
 
-        context = "\n".join([doc.page_content[:500] for doc in docs])
+        # Deduplicate
+        unique_candidates = []
+        seen = set()
+
+        for doc in dense_candidates + sparse_candidates:
+            chunk_id = doc.metadata.get("chunk_id")
+            if chunk_id:
+                if chunk_id not in seen:
+                    seen.add(chunk_id)
+                    unique_candidates.append(doc)
+            else:
+                if doc.page_content not in seen:
+                    seen.add(doc.page_content)
+                    unique_candidates.append(doc)
+
+        # 🔥 RERANK
+        pairs = [[question, doc.page_content] for doc in unique_candidates]
+        scores = reranker.predict(pairs)
+        ranked_candidates = sorted(zip(scores, unique_candidates), key=lambda x: x[0], reverse=True)
+        top_docs = [doc for score, doc in ranked_candidates[:3]]
+
+        context = "\n".join([doc.page_content for doc in top_docs])
         context = clean_context(context)
 
-        final_prompt = f"""{SYSTEM_PROMPT}
-
-Question:
+        user_prompt = f"""Question:
 {question}
 
 Context:
@@ -205,7 +315,11 @@ Answer:
             try:
                 response = client.models.generate_content(
                     model="gemini-2.5-flash-lite",
-                    contents=final_prompt
+                    contents=user_prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM_PROMPT,
+                        temperature=0.2
+                    )
                 )
 
                 import urllib.parse

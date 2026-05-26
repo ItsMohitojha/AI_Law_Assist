@@ -19,6 +19,9 @@ faiss_index/
 # Legal PDFs (large files, not suitable for git)
 data/*.pdf
 
+# Processed extraction output (rebuild with scripts/extract_text.py)
+data/processed/
+
 # OS files
 Thumbs.db
 Desktop.ini

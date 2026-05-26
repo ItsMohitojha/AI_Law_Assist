@@ -1,10 +1,6 @@
-# 🏛️ AI Law Assistant - Frontend Setup Guide
+# 🏛️ AI Law Assistant
 
-## Overview
-This project consists of:
-- **Flask API Backend** (`api.py`) - Handles legal queries and maintains conversation history
-- **Streamlit Frontend** (`app_streamlit.py`) - Web UI for interacting with the assistant
-- **CLI Version** (`app.py`) - Original command-line interface
+An AI-powered legal assistant for Indian law, built with a RAG (Retrieval Augmented Generation) pipeline. Ask questions about the Indian Constitution, IPC, BNS, Contract Act, and more — get accurate, cited answers from actual legal text.
 
 ## Quick Start
 
@@ -14,196 +10,112 @@ This project consists of:
 pip install -r requirements.txt
 ```
 
-### 2. Setup (First Time Only)
+### 2. Setup Environment
 
-Build the FAISS index from your PDF documents:
+Create a `.env` file in the project root:
+```
+GEMINI_API_KEY=your_gemini_api_key_here
+```
+
+### 3. Build the FAISS Index (First Time Only)
 
 ```bash
 python build_index.py
 ```
 
-This creates the search index from all PDFs in the `data/` folder.
+This creates the vector search index from all PDFs in `data/raw/`.
 
-### 3. Run the System
+### 4. Run
 
-#### Option A: Web Interface (HTML + Flask API) ⭐ **Recommended**
-
-**Single Terminal - Start Flask API:**
 ```bash
 python api.py
 ```
-✅ Open browser: `http://localhost:5000`
 
-The API serves both the web interface and handles all legal queries.
-
-#### Option B: CLI Interface (Original)
-
-```bash
-python app.py
-```
+Open browser → `http://localhost:5000`
 
 ## 🎨 Features
 
-### Web Frontend (HTML + JavaScript)
-- ✨ Modern, responsive interface
-- 🔄 Conversation history per session
-- 📌 Source document tracking with citations
-- 🆕 Clear chat or start new session
-- 📊 Real-time session management
-- ✅ Live API status indicator
-- 🎯 Beautiful gradients and smooth animations
-- 📱 Fully scrollable message area
-
-### Flask API
-- `POST /api/chat` - Send a question and get an answer
-- `GET /api/history/<session_id>` - Get conversation history
-- `DELETE /api/history/<session_id>` - Clear conversation history
-- `GET /api/health` - Check API status
+- ✨ Cinematic hero section with animated scales → morphs into chat interface
+- 🔄 Real-time SSE streaming responses
+- 📌 Source document tracking with legal citations
+- 🌙 Dark/light mode toggle
+- 📊 Session-based conversation memory
+- ✅ Live API health indicator
+- 📱 Responsive design
 
 ## 🔧 Architecture
 
-### System Infrastructure
 ```
-┌─────────────────────────────────────────────┐
-│     Web Frontend (Port 5000)                │
-│  - HTML/CSS/JavaScript UI                   │
-│  - Session Management                       │
-│  - Display Answers & Sources                │
-└────────────────┬────────────────────────────┘
-                 │ HTTP Requests
-                 │
-┌────────────────▼────────────────────────────┐
-│     Flask API Backend (Port 5000)           │
-│  - Question Processing                      │
-│  - RAG Pipeline Orchestration               │
-│  - Conversation History Management          │
-│  - Gemini API Integration                   │
-└────────────────┬────────────────────────────┘
-                 │
-         ┌───────┴─────────┐
-         │                 │
-┌────────▼───┐    ┌────────▼───┐
-│ FAISS      │    │  Gemini    │
-│ Vector DB  │    │  API       │
-└────────────┘    └────────────┘
+┌───────────────────────────────────────────────┐
+│     Web Frontend (index.html)                 │
+│  - Cinematic hero → chat transition           │
+│  - SSE streaming, dark/light mode             │
+│  - Served by Flask at http://localhost:5000    │
+└────────────────┬──────────────────────────────┘
+                 │ HTTP (REST + SSE)
+┌────────────────▼──────────────────────────────┐
+│     Flask API Backend (api.py)                │
+│  - POST /api/chat/stream  → SSE streaming     │
+│  - POST /api/chat         → non-streaming     │
+│  - GET  /api/health       → status check      │
+│  - GET  /api/history/:id  → conversation      │
+│  - DELETE /api/history/:id→ clear history      │
+└────────┬──────────────────┬───────────────────┘
+         │                  │
+  ┌──────▼──────┐   ┌──────▼──────┐
+  │ FAISS Vector│   │ Google      │
+  │ Store       │   │ Gemini API  │
+  │ (local)     │   │ (remote)    │
+  └─────────────┘   └─────────────┘
 ```
 
-### RAG (Retrieval Augmented Generation) Pipeline
-```
-User Question
-     ↓
-Retriever (get relevant sections)
-     ↓
-Clean context (remove noise)
-     ↓
-LLM with strong prompt
-     ↓
-Formatted Markdown output
-     ↓
-Styled UI (Rendered to user)
-```
-
-**Pipeline Details:**
-- **Retriever**: FAISS vector database retrieves k=10 most relevant document chunks
-- **Context Cleaning**: Removes duplicates, redundant text, and formats document excerpts
-- **LLM Processing**: Google Gemini 2.5 Flash processes cleaned context with specialized legal prompt
-- **Markdown Formatting**: LLM returns structured markdown with headings, lists, and citations
-- **UI Rendering**: Frontend converts markdown to styled HTML with source attribution
-
-## 📝 Usage Examples
-
-### Through Web Frontend ⭐
-1. Start API: `python api.py`
-2. Open browser → `http://localhost:5000`
-3. Type your legal question
-4. Get instant answers with source citations
-5. Chat history maintained automatically
-6. Use sidebar to clear chat or start new session
-
-### Through API Directly
-
-```bash
-# Send a question
-curl -X POST http://localhost:5000/api/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "session_id": "user123",
-    "question": "What is Article 370?"
-  }'
-
-# Get conversation history
-curl http://localhost:5000/api/history/user123
-
-# Clear history
-curl -X DELETE http://localhost:5000/api/history/user123
-```
-
-## 🚀 Production Deployment
-
-### For Production, Consider:
-
-1. **Database for Conversations** - Replace in-memory storage with PostgreSQL/MongoDB
-2. **Authentication** - Add user authentication and API key management
-3. **Rate Limiting** - Prevent API abuse with request throttling
-4. **Caching** - Cache frequent queries and their responses
-5. **Error Logging** - Implement comprehensive logging with monitoring
-6. **Gunicorn** - Use Gunicorn instead of Flask development server
-7. **HTTPS** - Enable SSL/TLS encryption for security
-8. **Reverse Proxy** - Use Nginx to serve static files and proxy API
-
-### Example Production Setup:
-
-```bash
-# Install production server
-pip install gunicorn
-
-# Run Flask API with Gunicorn (multiple workers)
-gunicorn -w 4 -b 0.0.0.0:5000 api:app
-
-# Nginx configuration for reverse proxy would handle:
-# - Static file serving (index.html, CSS, JS)
-# - SSL/TLS termination
-# - Request routing to Gunicorn workers
-# - Load balancing
-```
+### RAG Pipeline (per query)
+1. User sends question via chat UI
+2. FAISS retriever finds top-3 most relevant document chunks
+3. Chunks cleaned and truncated (remove markdown noise, page numbers)
+4. System prompt + question + context → Gemini 2.5 Flash Lite
+5. Response streamed word-by-word via SSE
+6. Frontend renders markdown in real-time
 
 ## 📂 Project Structure
 
 ```
 D:\Ai_Law_Assist\
-├── app.py                 # CLI version (original)
-├── api.py                 # Flask API backend + HTML server ⭐
-├── index.html             # Web UI (HTML/CSS/JavaScript) ⭐
-├── build_index.py         # Build FAISS index
+├── api.py                 # Flask API backend + HTML server
+├── index.html             # Web UI (HTML/CSS/JavaScript)
+├── build_index.py         # Build FAISS index from PDFs
 ├── requirements.txt       # Python dependencies
-├── README.md              # This file
-├── .env                   # API keys (create this)
-├── data/                  # PDF documents folder
-├── faiss_index/           # Vector database
-│   └── index.faiss
-└── __pycache__/
+├── hero_bg.png            # Hero background image
+├── .env                   # API key (create this)
+├── data/
+│   ├── raw/               # Legal PDFs (9 categories, 14 PDFs)
+│   └── processed/         # Extraction pipeline output
+├── scripts/
+│   └── extract_text.py    # Phase 1: PDF text extraction
+├── faiss_index/           # Vector database (rebuild with build_index.py)
+├── Frontend/
+│   ├── DESIGN.md          # Design system reference
+│   ├── theme.css          # Tailwind v4 design tokens
+│   ├── variables.css      # CSS custom properties
+│   └── tokens.json        # Design tokens (JSON)
+└── .agents/               # Agent protocol
 ```
 
-## ⚙️ Configuration
+## 📚 Legal Corpus
 
-### Environment Variables (.env)
-```
-GEMINI_API_KEY=your_gemini_api_key_here
-```
+14 PDFs across 9 categories:
 
-### Tuning Parameters (in api.py and app.py)
-
-```python
-# Number of documents to retrieve
-retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
-
-# Chunk size for document splitting (in build_index.py)
-chunk_size=1000
-chunk_overlap=200
-
-# Gemini model (can upgrade to gemini-pro)
-model="gemini-2.5-flash"
-```
+| Category | Acts |
+|----------|------|
+| Constitutional | Constitution of India |
+| Criminal | BNS 2023, BNSS 2023, BSA 2023, IPC, Prevention of Corruption Act |
+| Civil | Code of Civil Procedure, Indian Contract Act |
+| Consumer | Consumer Protection Act 2019 |
+| Cyber | Information Technology Act 2000 |
+| Labor | Industrial Disputes Act |
+| Transport | Motor Vehicles Act 1988 |
+| Education | UGC Regulations |
+| Women Protection | Protection of Women from Domestic Violence Act |
 
 ## 🐛 Troubleshooting
 
@@ -212,45 +124,16 @@ model="gemini-2.5-flash"
 | **"Cannot connect to API"** | Make sure `python api.py` is running |
 | **"GEMINI_API_KEY not found"** | Create `.env` file with your API key |
 | **"FAISS index not found"** | Run `python build_index.py` first |
-| **Slow responses** | Reduce `k` in retriever or upgrade API key |
-| **Inaccurate answers** | Ensure PDFs are in `data/` folder and rebuild index |
+| **Slow responses** | Reduce `k` in retriever or check API quota |
 
-## 📚 Files Explanation
+## 🚀 Production Deployment
 
-| File | Purpose |
-|------|---------|
-| `app.py` | CLI chatbot (original version) |
-| `api.py` | Flask REST API backend + serves HTML UI |
-| `index.html` | Web UI frontend (HTML/CSS/JavaScript) |
-| `build_index.py` | FAISS index builder from PDFs |
-| `requirements.txt` | Dependencies list |
-
-## 🎯 Next Steps
-
-1. ✅ Install dependencies: `pip install -r requirements.txt`
-2. ✅ Build index: `python build_index.py`
-3. ✅ Start API server: `python api.py`
-4. ✅ Open browser: `http://localhost:5000`
-5. ✅ Start asking legal questions!
-
-## 💡 Tips
-
-- **Session Persistence**: Each browser session gets a unique ID maintained in localStorage
-- **History Management**: Clear chat to reset conversation for current session
-- **Sources Tracking**: All answers include document citations showing which laws/sections were referenced
-- **API Reuse**: Other applications can call the REST API at `http://localhost:5000/api/chat`
-- **Scrollability**: Messages area is fully scrollable to read long legal responses
-- **Real-time Status**: API connection status visible in sidebar
-
-## 📞 Support
-
-For issues or improvements:
-- Check Flask API logs in terminal for backend errors
-- Open browser console (F12) for frontend errors
-- Verify `.env` file has correct `GEMINI_API_KEY`
-- Ensure `faiss_index/` exists (run `build_index.py` if missing)
-- Check that PDF documents are in `data/` folder
+For production, consider:
+- **Gunicorn** instead of Flask dev server: `gunicorn -w 4 -b 0.0.0.0:5000 api:app`
+- **Nginx** reverse proxy for static files and SSL
+- **Database** for conversation persistence (replace in-memory dict)
+- **Authentication** and rate limiting
 
 ---
 
-**Enjoy your AI Law Assistant! 🏛️⚖️**
+**Built with Flask, FAISS, Google Gemini, and ⚖️**

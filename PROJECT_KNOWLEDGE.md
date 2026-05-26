@@ -49,12 +49,14 @@
 ### RAG Pipeline (per query)
 1. User sends question via chat UI
 2. Flask receives POST to `/api/chat/stream`
-3. FAISS retriever finds top-3 (`k=3`) most relevant document chunks
-4. Each chunk truncated to 500 chars, then cleaned (remove markdown noise, page numbers)
-5. System prompt + question + cleaned context → sent to Gemini 2.5 Flash Lite
-6. Response streamed word-by-word via SSE (URL-encoded words)
-7. Frontend decodes + renders markdown in real-time
-8. Conversation stored in-memory per `session_id`
+3. Hybrid retrieval fetches candidates: 15 dense candidates via FAISS, 15 sparse candidates via BM25
+4. Candidates are deduplicated by `chunk_id` (fallback to content string).
+5. Candidates are reranked using `CrossEncoder` (`ms-marco-MiniLM-L-6-v2`), top-3 selected.
+6. Context is built without truncating character limits.
+7. System prompt + question + cleaned context → sent to Gemini 2.5 Flash Lite
+8. Response streamed word-by-word via SSE (URL-encoded words)
+9. Frontend decodes + renders markdown in real-time
+10. Conversation stored in-memory per `session_id`
 
 ---
 
@@ -64,11 +66,10 @@
 
 | File | Purpose | Key Details |
 |------|---------|-------------|
-| `api.py` | **Main Flask backend** (252 lines) | Serves HTML, handles chat (streaming + non-streaming), RAG pipeline, conversation memory. Uses `google-genai` client directly (not LangChain LLM wrapper). Model: `gemini-2.5-flash-lite`. Retriever `k=3`. |
-| `app.py` | **CLI chatbot** (133 lines) | Original terminal-based version. Uses multi-turn conversation with message history. Retriever `k=10, fetch_k=20`. Different (simpler) system prompt. |
-| `build_index.py` | **FAISS index builder** (77 lines) | Loads all PDFs from `data/`, splits with `RecursiveCharacterTextSplitter` (chunk_size=1500, overlap=300), builds FAISS index, saves to `faiss_index/`. |
+| `api.py` | **Main Flask backend** (362 lines) | Serves HTML, handles chat (streaming + non-streaming), RAG pipeline, conversation memory. Uses `google-genai` client directly. Model: `gemini-2.5-flash-lite`. Hybrid retrieval ($K_{dense}=15, K_{sparse}=15$) with `CrossEncoder` (`ms-marco-MiniLM-L-6-v2`) reranking to top $k=3$. Features pure-python `BM25Retriever`. |
+| `build_index.py` | **FAISS index builder** (77 lines) | Loads JSON chunks from `data/processed/chunks/`, maps metadata including `chunk_id` and `raw_content`, builds FAISS index, saves to `faiss_index/`. |
 | `index.html` | **Main web UI** (2068 lines) | Single-file HTML/CSS/JS app. Cinematic hero section with animated scales button → morphs into search dock → transitions to chat view. Full chat UI with sidebar, welcome state, message feed, typing indicators. Dark/light mode. Uses Tailwind CDN + custom CSS variables. |
-| `requirements.txt` | **Dependencies** | google-genai, langchain, langchain-community, langchain-text-splitters, langchain-huggingface, sentence-transformers, faiss-cpu, python-dotenv, flask, flask-cors, streamlit, requests, huggingface-hub |
+| `requirements.txt` | **Dependencies** | google-genai, langchain, langchain-community, langchain-text-splitters, langchain-huggingface, sentence-transformers, faiss-cpu, python-dotenv, flask, flask-cors, huggingface-hub |
 | `README.md` | **Setup guide** | Installation, architecture diagrams, API reference, troubleshooting |
 | `.env` | **API key** | Contains `GEMINI_API_KEY` (Gemini API key) |
 | `hero_bg.png` | **Hero background image** | 589KB PNG, also duplicated in `static/` |
@@ -202,8 +203,6 @@ faiss-cpu             # Vector similarity search
 python-dotenv         # .env file loading
 flask                 # Web framework
 flask-cors            # CORS middleware
-streamlit             # Alt frontend (not currently used)
-requests              # HTTP client
 huggingface-hub>=0.16.0
 ```
 
@@ -239,8 +238,8 @@ huggingface-hub>=0.16.0
 1. **Duplicate import:** `api.py` line 106 re-imports Flask — harmless but redundant
 2. **UTF-8 force:** `api.py` wraps stdout/stderr for Windows console compatibility
 3. **No persistent storage:** Conversations are in-memory dict, lost on server restart
-4. **k=3 vs k=10:** API uses `k=3` retriever, CLI uses `k=10` — intentional (less context = better for API prompt)
-5. **500-char truncation:** Each retrieved doc chunk is truncated to 500 chars before sending to Gemini
+4. **Hybrid RAG parameters:** API fetches dense/sparse `k=15`, then reranks to select top 3 chunks to feed into context.
+5. **Context building:** Full document page_content is used without character truncation, cleaned only via regex.
 6. **1200-char answer cap:** Non-streaming endpoint truncates answers at 1200 chars
 7. **CinematicTransition.jsx exists but is NOT used** — index.html has its own vanilla JS version
 8. **`allow_dangerous_deserialization=True`** — Required for FAISS pickle loading, acceptable for local use
@@ -262,7 +261,6 @@ huggingface-hub>=0.16.0
 ### ⚠️ Known Issues
 - Conversations lost on server restart (in-memory only)
 - No authentication or rate limiting
-- Streamlit frontend (`app_streamlit.py`) referenced in README but file doesn't exist
 - No production deployment config (no Gunicorn, no Nginx)
 
 ---
@@ -271,6 +269,7 @@ huggingface-hub>=0.16.0
 
 | Date | Author | Change |
 |------|--------|--------|
+| 2026-05-26 | Antigravity | Implemented Phase 4 Hybrid Retrieval (FAISS + BM25) and Cross-Encoder Reranking, fixed context truncation and cleaned Gemini API integrations. Removed streamlit and old app.py files. |
 | 2026-05-26 | Antigravity | Created PROJECT_KNOWLEDGE.md — initial full project documentation |
 | *(prior)* | Various agents | Built cinematic hero UI, SSE streaming, Nyaya persona prompt, FAISS pipeline, dark mode |
 

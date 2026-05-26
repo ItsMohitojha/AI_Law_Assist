@@ -12,9 +12,6 @@ python-dotenv
 flask
 flask-cors
 
-# Streamlit Frontend
-streamlit
-requests
 
 # Additional utilities
 huggingface-hub>=0.16.0
