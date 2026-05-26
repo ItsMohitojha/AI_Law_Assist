@@ -5,7 +5,7 @@ import ssl
 try:
     req = urllib.request.Request(
         'http://localhost:5000/api/chat/stream',
-        data=json.dumps({"question": "test", "session_id": "test"}).encode('utf-8'),
+        data=json.dumps({"question": "What is the compensation for breach of contract?", "session_id": "test"}).encode('utf-8'),
         headers={'Content-Type': 'application/json'}
     )
     with urllib.request.urlopen(req) as response:
