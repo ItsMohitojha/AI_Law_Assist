@@ -266,7 +266,7 @@ huggingface-hub>=0.16.0
 
 ### ⚠️ Known Issues
 - Conversations lost on server restart (in-memory only)
-- No authentication or rate limiting
+- No authentication
 - No production deployment config (no Gunicorn, no Nginx)
 
 ---
@@ -275,6 +275,7 @@ huggingface-hub>=0.16.0
 
 | Date | Author | Change |
 |------|--------|--------|
+| 2026-05-28 | Antigravity | Merged Jules PR for thread-safe, in-memory rate limiting (5 requests/min per IP) on chat endpoints, verified with test scripts. |
 | 2026-05-27 | Antigravity | Integrated Jules PR and added interactive javascript controllers to index.html for features/contact sections, responsive mobile hamburger menu, and feedback form. |
 | 2026-05-26 | Antigravity | Implemented Phase 4 Hybrid Retrieval (FAISS + BM25) and Cross-Encoder Reranking, fixed context truncation and cleaned Gemini API integrations. Removed streamlit and old app.py files. |
 | 2026-05-26 | Antigravity | Created PROJECT_KNOWLEDGE.md — initial full project documentation |
@@ -287,7 +288,7 @@ huggingface-hub>=0.16.0
 ### Planned
 - [ ] Database persistence for conversations (replace in-memory dict)
 - [ ] User authentication & API key management
-- [ ] Rate limiting
+- [x] Rate limiting (completed in-memory sliding window limiter)
 - [ ] Response caching for frequent queries
 - [ ] Production deployment (Gunicorn + Nginx)
 - [ ] More legal PDFs in corpus
@@ -312,6 +313,7 @@ Jules is configured as an MCP server with 4 tools:
 ### Past Jules Sessions
 | Session ID | Status | Task |
 |-----------|--------|------|
+| `sessions/9176958729080346146` | COMPLETED | Implement thread-safe, in-memory sliding-window rate limiting on chat endpoints in api.py. |
 | `sessions/12764642169873284011` | COMPLETED | Improve frontend design (index.html) with responsive Features, Contact footer, and forms. |
 | `sessions/6635753373501014959` | COMPLETED | Bitcoin trading simulator (test/demo, unrelated to this project) |
 
