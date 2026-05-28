@@ -154,6 +154,11 @@
 
 ## 4. API Reference
 
+### Rate Limiting
+- Thread-safe, in-memory rate limiting using a sliding window algorithm is applied to the `/api/chat` and `/api/chat/stream` endpoints.
+- Limit: 5 requests per minute per IP address.
+- Returns `{"error": "Too many requests. Please try again later."}` with HTTP status `429` if exceeded.
+
 ### `POST /api/chat`
 **Non-streaming.** Request: `{ "question": "...", "session_id": "..." }`. Response: `{ "success": true, "answer": "..." }`. Answer truncated at 1200 chars.
 

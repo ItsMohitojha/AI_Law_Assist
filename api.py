@@ -3,6 +3,8 @@ import re
 import sys
 import io
 import math
+import time
+import threading
 from dotenv import load_dotenv
 
 # Force UTF-8 output so Windows console encoding never crashes the server
@@ -169,6 +171,30 @@ ABSOLUTE RULES FOR LEGAL QUERIES:
 # -------------------- MEMORY --------------------
 conversations = {}
 
+# -------------------- RATE LIMITER --------------------
+class RateLimiter:
+    def __init__(self, limit=5, window=60):
+        self.limit = limit
+        self.window = window
+        self.requests = {}
+        self.lock = threading.Lock()
+
+    def is_allowed(self, ip):
+        with self.lock:
+            current_time = time.time()
+            if ip not in self.requests:
+                self.requests[ip] = []
+
+            # Remove requests older than the window
+            self.requests[ip] = [t for t in self.requests[ip] if current_time - t < self.window]
+
+            if len(self.requests[ip]) < self.limit:
+                self.requests[ip].append(current_time)
+                return True
+            else:
+                return False
+
+rate_limiter = RateLimiter(limit=5, window=60)
 
 # -------------------- ROOT --------------------
 @app.route("/")
@@ -186,6 +212,11 @@ def health():
 # -------------------- CHAT --------------------
 @app.route("/api/chat", methods=["POST"])
 def chat():
+    client_ip = request.remote_addr
+    if not rate_limiter.is_allowed(client_ip):
+        print(f"Rate limit exceeded for IP: {client_ip}", flush=True)
+        return jsonify({"error": "Too many requests. Please try again later."}), 429
+
     try:
         data = request.json
         question = data.get("question", "").strip()
@@ -263,6 +294,11 @@ Answer:
 # -------------------- SSE STREAM --------------------
 @app.route("/api/chat/stream", methods=["POST"])
 def chat_stream():
+    client_ip = request.remote_addr
+    if not rate_limiter.is_allowed(client_ip):
+        print(f"Rate limit exceeded for IP: {client_ip}", flush=True)
+        return jsonify({"error": "Too many requests. Please try again later."}), 429
+
     try:
         data = request.json
         question = data.get("question", "").strip()
